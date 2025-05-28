@@ -53,6 +53,7 @@ def side_bar():
 
     st.session_state[f'api_key_{provedor}'] = api_key
     
+    #commitfuncionaaa
 
 def main():
   pag_chat()
