@@ -2,25 +2,62 @@ import streamlit as st
 from langchain.memory import ConversationBufferMemory
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
+from langchain_community.llms import HuggingFaceHub
+from loaders import *
+import tempfile
+#from langchain_huggingface import HuggingFaceHub
 
-# GROQ_API_KEY = "sk_CVSY52o7T1716DIb1CDaWGdyb3FYp3VGkFuq436hNJgPS1QKOCTg"
+# GROQ_API_KEY = "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"
 
-#ajustar a questão da chave da API, adicionar outros provedores de IA que não sejam pagos para poder testar
+
 
 TIPOS_ARQUIVOS_VALIDOS = ['Youtube', 'Site', 'Pdf', 'Txt', 'Csv']
 
-CONFIG_MODELOS = {'Groq': {'modelos': ['llama3-70b-8192', 'gemma-2-9b-it'], 'chat': ChatGroq},
-'OpenAI': {'modelos': ['gpt-4o-mini', 'gpt-4o'], 'chat': ChatOpenAI}}
+CONFIG_MODELOS = {
+    'Groq': {
+        'modelos': ['llama3-70b-8192', 'gemma-2-9b-it'],
+        'chat': ChatGroq
+    },
+    'OpenAI': {
+        'modelos': ['gpt-4o-mini', 'gpt-4o'],
+        'chat': ChatOpenAI
+    },
+    'HuggingFace': {
+        'modelos': ['meta-llama/Meta-Llama-3-8B-Instruct', 'mistralai/Mixtral-8x7B-Instruct-v0.1'],
+        'chat': HuggingFaceHub
+    }
+}
 
 MEMORIA = ConversationBufferMemory()
 MEMORIA.chat_memory.add_user_message('Olá IA')
 MEMORIA.chat_memory.add_ai_message('Olá humano')
 
 
-def carrega_modelo(provedor, modelo, api_key):
+def carrega_modelo(provedor, modelo, api_key, tipo_arquivo, arquivo):
+
+  if tipo_arquivo == 'Site':
+    documento = carrega_site(arquivo)
+
+  if tipo_arquivo == 'Youtube':
+    documento = carrega_video(arquivo)
+
+  if tipo_arquivo == 'Pdf':
+    with tempfile.NamedTemporaryFile(suffix='.pdf') as temp:
+      temp.write(arquivo.read())
+      nome_temp = temp.name
+    documento = carrega_pdf(arquivo)
+    
+#testar a função pdf e ajeitar a txt e csv
+
+  if tipo_arquivo == 'Txt':
+    documento = carrega_txt
+
+  if tipo_arquivo == 'Csv':
+    documento = carrega_csv
+
   chat = CONFIG_MODELOS[provedor]['chat'](model=modelo, api_key=api_key)
   st.session_state['chat'] = chat
-  return chat
+  
 
 
 def pag_chat():
@@ -73,7 +110,7 @@ def side_bar():
     st.session_state[f'api_key_{provedor}'] = api_key
     
   if st.button('Inicializar Oráculo', use_container_width=True):
-    carrega_modelo(provedor, modelo, api_key)
+    carrega_modelo(provedor, modelo, api_key, tipo_arquivo, arquivo)
 
 
 
