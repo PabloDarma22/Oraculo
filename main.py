@@ -5,6 +5,7 @@ from langchain_groq import ChatGroq
 from langchain_community.llms import HuggingFaceHub
 from loaders import *
 import tempfile
+from langchain.prompts import ChatPromptTemplate
 #from langchain_huggingface import HuggingFaceHub
 
 # GROQ_API_KEY = "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"
@@ -32,9 +33,7 @@ MEMORIA = ConversationBufferMemory()
 MEMORIA.chat_memory.add_user_message('Olá IA')
 MEMORIA.chat_memory.add_ai_message('Olá humano')
 
-
-def carrega_modelo(provedor, modelo, api_key, tipo_arquivo, arquivo):
-
+def carrega_arquivo(tipo_arquivo, arquivo):
   if tipo_arquivo == 'Site':
     documento = carrega_site(arquivo)
 
@@ -42,28 +41,71 @@ def carrega_modelo(provedor, modelo, api_key, tipo_arquivo, arquivo):
     documento = carrega_video(arquivo)
 
   if tipo_arquivo == 'Pdf':
-    with tempfile.NamedTemporaryFile(suffix='.pdf') as temp:
+    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp:
       temp.write(arquivo.read())
       nome_temp = temp.name
-    documento = carrega_pdf(arquivo)
-    
-#testar a função pdf e ajeitar a txt e csv
+    documento = carrega_pdf(nome_temp)
+  
+  if tipo_arquivo == 'Csv':
+    with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as temp:
+      temp.write(arquivo.read())
+      nome_temp = temp.name
+    documento = carrega_csv(nome_temp)
 
   if tipo_arquivo == 'Txt':
-    documento = carrega_txt
+    with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as temp:
+      temp.write(arquivo.read())
+      nome_temp = temp.name
+    documento = carrega_txt(nome_temp)
 
-  if tipo_arquivo == 'Csv':
-    documento = carrega_csv
+  return documento
+
+
+def carrega_modelo(provedor, modelo, api_key, tipo_arquivo, arquivo):
+
+  documento = carrega_arquivo(tipo_arquivo, arquivo)
+
+  system_message = '''Voce é um assistente amigável chamado Oráculo.
+  Voce possui acesso às seguintes informações vindas 
+  de um documento {}:
+
+  ####
+  {}
+  ####
+
+  Utilize as informações fornecidas para basear as suas respostas.
+
+  Sempre que houver $ na sua saída, substitua por 5.
+
+  Se a informação do documento for algo como "Just a moment...Enable JavaScript and cookies to continue" sugira ao usuário carregar novamento o Oráculo!
+
+'''.format(tipo_arquivo, documento)
+
+  template = ChatPromptTemplate.from_messages([
+    ('system', system_message),
+    ('placeholder', '{chat_history}'),
+    ('user', '{input}')
+  ])
+
+
 
   chat = CONFIG_MODELOS[provedor]['chat'](model=modelo, api_key=api_key)
-  st.session_state['chat'] = chat
+  chain = template | chat
+
+
+  st.session_state['chain'] = chain
   
 
 
 def pag_chat():
   st.header("🤖 Seja bem-vindo ao Oráculo", divider=True)
 
-  chat_model = st.session_state.get('chat')
+  chain = st.session_state.get('chain')
+  if chain is None:
+    st.error('Carregue o Oráculo')
+    st.stop()
+
+
   memoria = st.session_state.get('memoria', MEMORIA)
   for mensagem in memoria.buffer_as_messages:
     chat = st.chat_message(mensagem.type)
@@ -75,7 +117,7 @@ def pag_chat():
     chat.markdown(input_usuario)
 
     chat = st.chat_message('ai')
-    resposta = chat.write_stream(chat_model.stream(input_usuario))
+    resposta = chat.write_stream(chain.stream({'input': input_usuario, 'chat_history': memoria.buffer_as_messages}))
 
     memoria.chat_memory.add_user_message(input_usuario)
     memoria.chat_memory.add_ai_message(resposta)
@@ -112,13 +154,15 @@ def side_bar():
   if st.button('Inicializar Oráculo', use_container_width=True):
     carrega_modelo(provedor, modelo, api_key, tipo_arquivo, arquivo)
 
-
+  if st.button('Apagar Histórico de conversa', use_container_width=True):
+    st.session_state['memoria'] = MEMORIA
 
 
 def main():
-  pag_chat()
   with st.sidebar:
     side_bar()
+  pag_chat()
+
 
 
 
